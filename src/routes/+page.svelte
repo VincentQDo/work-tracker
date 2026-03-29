@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import ArchiveMetric from '$lib/components/ArchiveMetric.svelte';
+	import MetricCard from '$lib/components/MetricCard.svelte';
+	import PanelSection from '$lib/components/PanelSection.svelte';
 	import { onDestroy, onMount } from 'svelte';
 
 	type SessionMode = 'idle' | 'work' | 'break';
@@ -455,13 +458,14 @@
 	}
 
 	function eventTone(event: SessionEvent) {
-		if (event.type === 'work_added') return 'timeline-row timeline-work-add';
-		if (event.type === 'work_removed') return 'timeline-row timeline-work-remove';
-		if (event.type === 'break_added') return 'timeline-row timeline-break-add';
-		if (event.type === 'break_removed') return 'timeline-row timeline-break-remove';
-		if (event.type === 'break_started') return 'timeline-row timeline-break-state';
-		if (event.type === 'break_ended') return 'timeline-row timeline-work-state';
-		return 'timeline-row timeline-default';
+		const base = 'flex items-start gap-4 rounded-2xl px-4 py-4';
+		if (event.type === 'work_added') return `${base} bg-success/10`;
+		if (event.type === 'work_removed') return `${base} bg-error/10`;
+		if (event.type === 'break_added') return `${base} bg-warning/15`;
+		if (event.type === 'break_removed') return `${base} bg-secondary/10`;
+		if (event.type === 'break_started') return `${base} bg-warning/10`;
+		if (event.type === 'break_ended') return `${base} bg-info/10`;
+		return base;
 	}
 
 	function eventBadge(event: SessionEvent) {
@@ -532,7 +536,7 @@
 
 <div class="page-shell" data-theme={theme}>
 	<div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-		<section class="hero-card">
+		<section class="panel-surface panel-pad">
 			<div class="flex flex-col gap-8 lg:flex-row lg:items-stretch">
 				<div class="flex-1">
 					<div class="flex flex-wrap items-center justify-between gap-3">
@@ -540,10 +544,16 @@
 							<span class={`badge badge-lg ${statusTone(session.mode)}`}
 								>{statusLabel(session.mode)}</span
 							>
-							<span class="eyebrow">Personal work hours</span>
+							<span
+								class="text-[0.72rem] font-bold tracking-[0.24em] text-[color:var(--app-muted)] uppercase"
+							>
+								Personal work hours
+							</span>
 						</div>
 						<div class="flex items-center gap-3">
-							<span class="theme-toggle-label">{theme === 'dark' ? 'Dark' : 'Light'}</span>
+							<span class="text-sm font-semibold text-[color:var(--app-ink)]">
+								{theme === 'dark' ? 'Dark' : 'Light'}
+							</span>
 							<input
 								type="checkbox"
 								class="toggle toggle-sm"
@@ -556,44 +566,50 @@
 					</div>
 
 					<div class="mt-5">
-						<p class="eyebrow opacity-70">Master Timer</p>
-						<p class="master-label">Total session span</p>
-						<h1 class="hero-time">
+						<p
+							class="text-[0.72rem] font-bold tracking-[0.24em] text-[color:var(--app-muted)] uppercase opacity-70"
+						>
+							Master Timer
+						</p>
+						<p class="mt-1 text-[clamp(1rem,2vw,1.35rem)] font-bold text-[color:var(--app-ink)]">
+							Total session span
+						</p>
+						<h1
+							class="mt-2 text-[clamp(2.75rem,6vw,4.5rem)] font-bold tracking-[-0.06em] text-[color:var(--app-ink)]"
+						>
 							{formatDuration(totals.spanMs).clock}
-							<span class="hero-ms">.{formatDuration(totals.spanMs).milliseconds}</span>
+							<span class="text-[0.42em] font-semibold text-[color:var(--app-muted)]">
+								.{formatDuration(totals.spanMs).milliseconds}
+							</span>
 						</h1>
-						<p class="hero-copy">{actionLabel}</p>
+						<p class="mt-3 max-w-[36rem] text-base text-[color:var(--app-muted)]">{actionLabel}</p>
 					</div>
 
 					<div class="mt-6 grid gap-3 sm:grid-cols-3">
-						<div class="stat-tile">
-							<span class="stat-label">Work Today</span>
-							<span class="stat-value">
-								{formatDuration(totals.workMs).clock}
-								<span class="stat-ms">.{formatDuration(totals.workMs).milliseconds}</span>
-							</span>
-						</div>
-						<div class="stat-tile">
-							<span class="stat-label">Break Today</span>
-							<span class="stat-value">
-								{formatDuration(totals.breakMs).clock}
-								<span class="stat-ms">.{formatDuration(totals.breakMs).milliseconds}</span>
-							</span>
-						</div>
-						<div class="stat-tile">
-							<span class="stat-label">Current Work Block</span>
-							<span class="stat-value">
-								{formatDuration(getCurrentWorkBlockMs(session, now)).clock}
-								<span class="stat-ms"
-									>.{formatDuration(getCurrentWorkBlockMs(session, now)).milliseconds}</span
-								>
-							</span>
-						</div>
+						<MetricCard
+							label="Work Today"
+							clock={formatDuration(totals.workMs).clock}
+							milliseconds={formatDuration(totals.workMs).milliseconds}
+						/>
+						<MetricCard
+							label="Break Today"
+							clock={formatDuration(totals.breakMs).clock}
+							milliseconds={formatDuration(totals.breakMs).milliseconds}
+						/>
+						<MetricCard
+							label="Current Work Block"
+							clock={formatDuration(getCurrentWorkBlockMs(session, now)).clock}
+							milliseconds={formatDuration(getCurrentWorkBlockMs(session, now)).milliseconds}
+						/>
 					</div>
 				</div>
 
-				<div class="action-panel lg:w-[22rem]">
-					<p class="panel-label">Actions</p>
+				<div class="action-surface p-5 text-[color:var(--app-ink)] sm:p-6 lg:w-[22rem]">
+					<p
+						class="text-[0.72rem] font-bold tracking-[0.24em] text-[color:var(--app-muted)] uppercase"
+					>
+						Actions
+					</p>
 					<div class="mt-4 grid gap-3">
 						{#if session.mode === 'idle'}
 							<button class="btn w-full btn-lg btn-primary" on:click={startWork}>Start work</button>
@@ -618,17 +634,19 @@
 
 					<div class="grid gap-4">
 						<div>
-							<p class="panel-subtitle">Add missed work time</p>
+							<p class="text-[0.92rem] font-semibold text-[color:var(--app-ink)]">
+								Add missed work time
+							</p>
 							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
 								{#each correctionPresets as preset (preset.label)}
 									<button
-										class="correction-btn btn btn-sm btn-primary"
+										class="btn min-w-0 justify-center font-semibold btn-sm btn-primary"
 										on:click={() => addCorrection('work', preset.amountMs)}
 									>
 										{preset.label}
 									</button>
 									<button
-										class="correction-btn btn btn-outline btn-sm btn-error"
+										class="btn min-w-0 justify-center font-semibold btn-outline btn-sm btn-error"
 										on:click={() => addCorrection('work', -preset.amountMs)}
 									>
 										-{preset.label.slice(1)}
@@ -638,17 +656,19 @@
 						</div>
 
 						<div>
-							<p class="panel-subtitle">Add missed break time</p>
+							<p class="text-[0.92rem] font-semibold text-[color:var(--app-ink)]">
+								Add missed break time
+							</p>
 							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
 								{#each correctionPresets as preset (preset.label)}
 									<button
-										class="correction-btn btn btn-sm btn-warning"
+										class="btn min-w-0 justify-center font-semibold btn-sm btn-warning"
 										on:click={() => addCorrection('break', preset.amountMs)}
 									>
 										{preset.label}
 									</button>
 									<button
-										class="correction-btn btn btn-outline btn-sm btn-secondary"
+										class="btn min-w-0 justify-center font-semibold btn-outline btn-sm btn-secondary"
 										on:click={() => addCorrection('break', -preset.amountMs)}
 									>
 										-{preset.label.slice(1)}
@@ -662,27 +682,23 @@
 		</section>
 
 		<div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-			<section class="panel-card text-slate-900">
-				<div class="flex items-center justify-between gap-4">
-					<div>
-						<p class="panel-label">Current day timeline</p>
-						<h2 class="panel-title">Recent activity</h2>
-					</div>
-					<p class="panel-meta">
-						{session.createdAt
-							? `Started ${formatTime(session.createdAt)}`
-							: 'No active session yet'}
-					</p>
-				</div>
-
+			<PanelSection
+				eyebrow="Current day timeline"
+				title="Recent activity"
+				meta={session.createdAt
+					? `Started ${formatTime(session.createdAt)}`
+					: 'No active session yet'}
+			>
 				{#if session.events.length > 0}
 					<ul class="activity-scroll mt-6 space-y-3">
 						{#each session.events as event (event.id)}
 							<li class={eventTone(event)}>
-								<div class="timeline-dot"></div>
+								<div
+									class="mt-[0.3rem] h-[0.8rem] w-[0.8rem] shrink-0 rounded-full bg-linear-to-br from-blue-500 to-sky-400 shadow-[0_0_0_6px_rgba(59,130,246,0.12)]"
+								></div>
 								<div class="min-w-0 flex-1">
 									<div class="flex flex-wrap items-center justify-between gap-2">
-										<p class="timeline-title">{event.label}</p>
+										<p class="font-semibold text-[color:var(--app-ink)]">{event.label}</p>
 										<div class="flex flex-wrap items-center gap-2">
 											{#if event.direction && event.target}
 												<span class={eventBadge(event)}>
@@ -690,11 +706,11 @@
 													{event.target}
 												</span>
 											{/if}
-											<span class="timeline-time">{formatTime(event.at)}</span>
+											<span class="text-[color:var(--app-muted)]">{formatTime(event.at)}</span>
 										</div>
 									</div>
 									{#if event.amountMs}
-										<p class="timeline-note">
+										<p class="text-sm text-[color:var(--app-muted)]">
 											Manual correction {event.direction === 'subtract'
 												? '-'
 												: '+'}{formatShortDuration(event.amountMs).slice(1)}
@@ -705,32 +721,26 @@
 						{/each}
 					</ul>
 				{:else}
-					<div class="empty-state mt-6">
-						<p class="empty-title">No activity yet</p>
-						<p class="empty-copy">
+					<div class="soft-surface mt-6 p-4">
+						<p class="font-semibold text-[color:var(--app-ink)]">No activity yet</p>
+						<p class="mt-1 text-sm text-[color:var(--app-muted)]">
 							Start work to create a session, then track breaks and missed time corrections.
 						</p>
 					</div>
 				{/if}
-			</section>
+			</PanelSection>
 
-			<section class="panel-card text-slate-900">
-				<div class="flex items-center justify-between gap-4">
-					<div>
-						<p class="panel-label">Archive</p>
-						<h2 class="panel-title">Recent days</h2>
-					</div>
-					<span class="badge badge-outline">{history.length} saved</span>
-				</div>
-
+			<PanelSection eyebrow="Archive" title="Recent days" badgeText={`${history.length} saved`}>
 				{#if history.length > 0}
 					<div class="mt-6 space-y-3">
 						{#each history as entry (entry.id)}
-							<div class="archive-card">
+							<div class="soft-surface p-4">
 								<div class="flex items-start justify-between gap-3">
 									<div>
-										<p class="archive-title">{formatDate(entry.startedAt)}</p>
-										<p class="archive-meta">
+										<p class="font-semibold text-[color:var(--app-ink)]">
+											{formatDate(entry.startedAt)}
+										</p>
+										<p class="text-[color:var(--app-muted)]">
 											{formatTime(entry.startedAt)} to {formatTime(entry.endedAt)}
 										</p>
 									</div>
@@ -738,42 +748,34 @@
 								</div>
 
 								<div class="mt-4 grid grid-cols-3 gap-2 text-sm">
-									<div class="archive-metric">
-										<p class="archive-label">Work</p>
-										<p class="archive-value">
-											{formatDuration(entry.workMs).clock}
-											<span class="archive-ms">.{formatDuration(entry.workMs).milliseconds}</span>
-										</p>
-									</div>
-									<div class="archive-metric">
-										<p class="archive-label">Break</p>
-										<p class="archive-value">
-											{formatDuration(entry.breakMs).clock}
-											<span class="archive-ms">.{formatDuration(entry.breakMs).milliseconds}</span>
-										</p>
-									</div>
-									<div class="archive-metric">
-										<p class="archive-label">Span</p>
-										<p class="archive-value">
-											{formatDuration(entry.workMs + entry.breakMs).clock}
-											<span class="archive-ms"
-												>.{formatDuration(entry.workMs + entry.breakMs).milliseconds}</span
-											>
-										</p>
-									</div>
+									<ArchiveMetric
+										label="Work"
+										clock={formatDuration(entry.workMs).clock}
+										milliseconds={formatDuration(entry.workMs).milliseconds}
+									/>
+									<ArchiveMetric
+										label="Break"
+										clock={formatDuration(entry.breakMs).clock}
+										milliseconds={formatDuration(entry.breakMs).milliseconds}
+									/>
+									<ArchiveMetric
+										label="Span"
+										clock={formatDuration(entry.workMs + entry.breakMs).clock}
+										milliseconds={formatDuration(entry.workMs + entry.breakMs).milliseconds}
+									/>
 								</div>
 							</div>
 						{/each}
 					</div>
 				{:else}
-					<div class="empty-state mt-6">
-						<p class="empty-title">No archived days yet</p>
-						<p class="empty-copy">
+					<div class="soft-surface mt-6 p-4">
+						<p class="font-semibold text-[color:var(--app-ink)]">No archived days yet</p>
+						<p class="mt-1 text-sm text-[color:var(--app-muted)]">
 							Use “Stop day and archive” to save the finished session locally.
 						</p>
 					</div>
 				{/if}
-			</section>
+			</PanelSection>
 		</div>
 	</div>
 </div>
