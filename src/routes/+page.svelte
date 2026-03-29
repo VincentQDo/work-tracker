@@ -504,16 +504,17 @@
 							>
 							<span class="eyebrow">Personal work hours</span>
 						</div>
-						<label class="theme-toggle">
+						<div class="flex items-center gap-3">
 							<span class="theme-toggle-label">{theme === 'dark' ? 'Dark' : 'Light'}</span>
 							<input
 								type="checkbox"
 								class="toggle toggle-sm"
 								checked={theme === 'dark'}
+								aria-label="Toggle dark mode"
 								on:change={(event) =>
 									saveTheme((event.currentTarget as HTMLInputElement).checked ? 'dark' : 'light')}
 							/>
-						</label>
+						</div>
 					</div>
 
 					<div class="mt-5">
@@ -565,16 +566,16 @@
 					<div class="grid gap-4">
 						<div>
 							<p class="panel-subtitle">Add missed work time</p>
-							<div class="mt-2 flex flex-wrap gap-2">
+							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
 								{#each correctionPresets as preset (preset.label)}
 									<button
-										class="btn btn-soft btn-sm btn-primary"
+										class="correction-btn btn btn-sm btn-primary"
 										on:click={() => addCorrection('work', preset.amountMs)}
 									>
 										{preset.label}
 									</button>
 									<button
-										class="btn btn-outline btn-sm btn-error"
+										class="correction-btn btn btn-outline btn-sm btn-error"
 										on:click={() => addCorrection('work', -preset.amountMs)}
 									>
 										-{preset.label.slice(1)}
@@ -585,16 +586,16 @@
 
 						<div>
 							<p class="panel-subtitle">Add missed break time</p>
-							<div class="mt-2 flex flex-wrap gap-2">
+							<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
 								{#each correctionPresets as preset (preset.label)}
 									<button
-										class="btn btn-soft btn-sm btn-warning"
+										class="correction-btn btn btn-sm btn-warning"
 										on:click={() => addCorrection('break', preset.amountMs)}
 									>
 										{preset.label}
 									</button>
 									<button
-										class="btn btn-outline btn-sm btn-secondary"
+										class="correction-btn btn btn-outline btn-sm btn-secondary"
 										on:click={() => addCorrection('break', -preset.amountMs)}
 									>
 										-{preset.label.slice(1)}
@@ -622,7 +623,7 @@
 				</div>
 
 				{#if session.events.length > 0}
-					<ul class="mt-6 space-y-3">
+					<ul class="activity-scroll mt-6 space-y-3">
 						{#each session.events as event (event.id)}
 							<li class={eventTone(event)}>
 								<div class="timeline-dot"></div>
