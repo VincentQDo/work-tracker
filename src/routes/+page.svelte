@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { onDestroy, onMount } from 'svelte';
 
 	type SessionMode = 'idle' | 'work' | 'break';
@@ -29,6 +30,8 @@
 		currentModeStartedAt: number | null;
 		accumulatedWorkMs: number;
 		accumulatedBreakMs: number;
+		currentWorkBlockStartedAt: number | null;
+		lastWorkBlockMs: number;
 		events: SessionEvent[];
 		updatedAt: number;
 	};
@@ -53,14 +56,20 @@
 		{ label: '+1h', amountMs: 60 * 60 * 1000 }
 	];
 
-	let session = createEmptySession();
-	let history: ArchivedSession[] = [];
+	let session = browser
+		? restoreActiveSession(window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY))
+		: createEmptySession();
+	let history: ArchivedSession[] = browser
+		? restoreHistory(window.localStorage.getItem(HISTORY_STORAGE_KEY))
+		: [];
 	let totals = getLiveTotals(session, Date.now());
-	let actionLabel = 'Start tracking your day';
+	let actionLabel = getActionLabel(session);
 	let now = Date.now();
 	let isHydrated = false;
-	let intervalId: number | undefined;
-	let theme: ThemeMode = 'dark';
+	let frameId: number | undefined;
+	let theme: ThemeMode = browser
+		? restoreTheme(window.localStorage.getItem(THEME_STORAGE_KEY))
+		: 'dark';
 
 	function createEmptySession(): ActiveSession {
 		return {
@@ -69,6 +78,8 @@
 			currentModeStartedAt: null,
 			accumulatedWorkMs: 0,
 			accumulatedBreakMs: 0,
+			currentWorkBlockStartedAt: null,
+			lastWorkBlockMs: 0,
 			events: [],
 			updatedAt: Date.now()
 		};
@@ -121,6 +132,12 @@
 					typeof parsed.accumulatedBreakMs === 'number'
 						? Math.max(0, parsed.accumulatedBreakMs)
 						: 0,
+				currentWorkBlockStartedAt:
+					typeof parsed.currentWorkBlockStartedAt === 'number'
+						? parsed.currentWorkBlockStartedAt
+						: null,
+				lastWorkBlockMs:
+					typeof parsed.lastWorkBlockMs === 'number' ? Math.max(0, parsed.lastWorkBlockMs) : 0,
 				events: Array.isArray(parsed.events)
 					? parsed.events.filter(isSessionEvent).slice(0, 50)
 					: [],
@@ -189,6 +206,14 @@
 		};
 	}
 
+	function getCurrentWorkBlockMs(state: ActiveSession, timestamp: number) {
+		if (state.mode === 'work' && state.currentWorkBlockStartedAt) {
+			return Math.max(0, timestamp - state.currentWorkBlockStartedAt);
+		}
+
+		return state.lastWorkBlockMs;
+	}
+
 	function saveActiveSession(nextSession: ActiveSession) {
 		session = nextSession;
 		totals = getLiveTotals(session, Date.now());
@@ -232,6 +257,7 @@
 				mode: 'work',
 				createdAt: session.createdAt ?? timestamp,
 				currentModeStartedAt: timestamp,
+				currentWorkBlockStartedAt: timestamp,
 				updatedAt: timestamp
 			},
 			createEvent(
@@ -255,6 +281,9 @@
 				mode: 'break',
 				accumulatedWorkMs: session.accumulatedWorkMs + elapsedWork,
 				currentModeStartedAt: timestamp,
+				lastWorkBlockMs: session.currentWorkBlockStartedAt
+					? Math.max(0, timestamp - session.currentWorkBlockStartedAt)
+					: elapsedWork,
 				updatedAt: timestamp
 			},
 			createEvent('break_started', 'Started break', timestamp)
@@ -274,6 +303,7 @@
 				mode: 'work',
 				accumulatedBreakMs: session.accumulatedBreakMs + elapsedBreak,
 				currentModeStartedAt: timestamp,
+				currentWorkBlockStartedAt: timestamp,
 				updatedAt: timestamp
 			},
 			createEvent('break_ended', 'Ended break', timestamp)
@@ -366,10 +396,14 @@
 		const hours = Math.floor(safe / 3_600_000);
 		const minutes = Math.floor((safe % 3_600_000) / 60_000);
 		const seconds = Math.floor((safe % 60_000) / 1000);
+		const milliseconds = safe % 1000;
 
-		return `${hours.toString().padStart(2, '0')}:${minutes
-			.toString()
-			.padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+		return {
+			clock: `${hours.toString().padStart(2, '0')}:${minutes
+				.toString()
+				.padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`,
+			milliseconds: milliseconds.toString().padStart(3, '0')
+		};
 	}
 
 	function formatShortDuration(ms: number) {
@@ -464,23 +498,27 @@
 
 	onMount(() => {
 		isHydrated = true;
+		saveTheme(theme);
 		syncFromStorage();
 
-		intervalId = window.setInterval(() => {
+		const step = () => {
 			now = Date.now();
 			totals = getLiveTotals(session, now);
-		}, 250);
+			frameId = window.requestAnimationFrame(step);
+		};
+
+		frameId = window.requestAnimationFrame(step);
 
 		window.addEventListener('storage', handleStorage);
 
 		return () => {
 			window.removeEventListener('storage', handleStorage);
-			if (intervalId) window.clearInterval(intervalId);
+			if (frameId) window.cancelAnimationFrame(frameId);
 		};
 	});
 
 	onDestroy(() => {
-		if (intervalId) clearInterval(intervalId);
+		if (frameId) cancelAnimationFrame(frameId);
 	});
 </script>
 
@@ -518,23 +556,38 @@
 					</div>
 
 					<div class="mt-5">
-						<p class="eyebrow opacity-70">Today</p>
-						<h1 class="hero-time">{formatDuration(totals.workMs)}</h1>
+						<p class="eyebrow opacity-70">Master Timer</p>
+						<p class="master-label">Total session span</p>
+						<h1 class="hero-time">
+							{formatDuration(totals.spanMs).clock}
+							<span class="hero-ms">.{formatDuration(totals.spanMs).milliseconds}</span>
+						</h1>
 						<p class="hero-copy">{actionLabel}</p>
 					</div>
 
 					<div class="mt-6 grid gap-3 sm:grid-cols-3">
 						<div class="stat-tile">
-							<span class="stat-label">Work</span>
-							<span class="stat-value">{formatDuration(totals.workMs)}</span>
+							<span class="stat-label">Work Today</span>
+							<span class="stat-value">
+								{formatDuration(totals.workMs).clock}
+								<span class="stat-ms">.{formatDuration(totals.workMs).milliseconds}</span>
+							</span>
 						</div>
 						<div class="stat-tile">
-							<span class="stat-label">Break</span>
-							<span class="stat-value">{formatDuration(totals.breakMs)}</span>
+							<span class="stat-label">Break Today</span>
+							<span class="stat-value">
+								{formatDuration(totals.breakMs).clock}
+								<span class="stat-ms">.{formatDuration(totals.breakMs).milliseconds}</span>
+							</span>
 						</div>
 						<div class="stat-tile">
-							<span class="stat-label">Session span</span>
-							<span class="stat-value">{formatDuration(totals.spanMs)}</span>
+							<span class="stat-label">Current Work Block</span>
+							<span class="stat-value">
+								{formatDuration(getCurrentWorkBlockMs(session, now)).clock}
+								<span class="stat-ms"
+									>.{formatDuration(getCurrentWorkBlockMs(session, now)).milliseconds}</span
+								>
+							</span>
 						</div>
 					</div>
 				</div>
@@ -687,15 +740,26 @@
 								<div class="mt-4 grid grid-cols-3 gap-2 text-sm">
 									<div class="archive-metric">
 										<p class="archive-label">Work</p>
-										<p class="archive-value">{formatDuration(entry.workMs)}</p>
+										<p class="archive-value">
+											{formatDuration(entry.workMs).clock}
+											<span class="archive-ms">.{formatDuration(entry.workMs).milliseconds}</span>
+										</p>
 									</div>
 									<div class="archive-metric">
 										<p class="archive-label">Break</p>
-										<p class="archive-value">{formatDuration(entry.breakMs)}</p>
+										<p class="archive-value">
+											{formatDuration(entry.breakMs).clock}
+											<span class="archive-ms">.{formatDuration(entry.breakMs).milliseconds}</span>
+										</p>
 									</div>
 									<div class="archive-metric">
 										<p class="archive-label">Span</p>
-										<p class="archive-value">{formatDuration(entry.workMs + entry.breakMs)}</p>
+										<p class="archive-value">
+											{formatDuration(entry.workMs + entry.breakMs).clock}
+											<span class="archive-ms"
+												>.{formatDuration(entry.workMs + entry.breakMs).milliseconds}</span
+											>
+										</p>
 									</div>
 								</div>
 							</div>

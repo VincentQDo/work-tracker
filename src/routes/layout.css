@@ -97,11 +97,24 @@ body {
 	color: var(--app-ink);
 }
 
+.hero-ms {
+	font-size: 0.42em;
+	font-weight: 600;
+	color: var(--app-muted);
+}
+
 .hero-copy {
 	margin-top: 0.75rem;
 	max-width: 36rem;
 	font-size: 1rem;
 	color: var(--app-muted);
+}
+
+.master-label {
+	margin-top: 0.35rem;
+	font-size: clamp(1rem, 2vw, 1.35rem);
+	font-weight: 700;
+	color: var(--app-ink);
 }
 
 .stat-tile {
@@ -134,6 +147,12 @@ body {
 	font-weight: 700;
 	letter-spacing: -0.03em;
 	color: var(--app-ink);
+}
+
+.stat-ms,
+.archive-ms {
+	font-size: 0.7em;
+	color: var(--app-muted);
 }
 
 .panel-title {
