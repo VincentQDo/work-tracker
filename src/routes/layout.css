@@ -2,3 +2,119 @@
 @plugin 'daisyui';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+:root {
+	color-scheme: light;
+	font-family: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', sans-serif;
+	background:
+		radial-gradient(circle at top, rgb(250 245 255), transparent 36%),
+		linear-gradient(180deg, rgb(255 251 245), rgb(243 246 255));
+}
+
+body {
+	min-height: 100vh;
+	color: rgb(26 29 37);
+	background: transparent;
+}
+
+.page-shell {
+	background:
+		radial-gradient(circle at top right, rgb(255 214 170 / 0.4), transparent 28%),
+		radial-gradient(circle at left center, rgb(184 212 255 / 0.35), transparent 22%);
+}
+
+.hero-card,
+.panel-card {
+	border: 1px solid rgb(255 255 255 / 0.7);
+	background: rgb(255 255 255 / 0.72);
+	backdrop-filter: blur(18px);
+	box-shadow: 0 28px 70px rgb(48 61 99 / 0.08);
+}
+
+.hero-card {
+	border-radius: 2rem;
+	padding: 1.5rem;
+}
+
+.panel-card {
+	border-radius: 1.75rem;
+	padding: 1.5rem;
+}
+
+.action-panel {
+	border-radius: 1.75rem;
+	padding: 1.25rem;
+	background: linear-gradient(180deg, rgb(255 255 255 / 0.88), rgb(245 247 255 / 0.82));
+	border: 1px solid rgb(255 255 255 / 0.8);
+}
+
+.stat-tile {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 1rem;
+	border-radius: 1.25rem;
+	background: rgb(255 255 255 / 0.65);
+	border: 1px solid rgb(255 255 255 / 0.72);
+}
+
+.stat-label,
+.panel-label {
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.24em;
+	text-transform: uppercase;
+	color: rgb(74 85 104 / 0.7);
+}
+
+.panel-subtitle {
+	font-size: 0.92rem;
+	font-weight: 600;
+	color: rgb(47 55 72 / 0.85);
+}
+
+.stat-value {
+	font-size: 1.45rem;
+	font-weight: 700;
+	letter-spacing: -0.03em;
+}
+
+.timeline-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.9rem;
+	padding: 0.95rem 0;
+}
+
+.timeline-row + .timeline-row {
+	border-top: 1px solid rgb(148 163 184 / 0.15);
+}
+
+.timeline-dot {
+	width: 0.8rem;
+	height: 0.8rem;
+	margin-top: 0.3rem;
+	border-radius: 999px;
+	background: linear-gradient(135deg, rgb(55 114 255), rgb(104 164 255));
+	box-shadow: 0 0 0 6px rgb(59 130 246 / 0.12);
+	flex-shrink: 0;
+}
+
+.archive-card,
+.empty-state {
+	border-radius: 1.5rem;
+	padding: 1rem;
+	background: rgb(249 250 255 / 0.8);
+	border: 1px solid rgb(226 232 240 / 0.75);
+}
+
+@media (min-width: 640px) {
+	.hero-card,
+	.panel-card {
+		padding: 1.75rem;
+	}
+
+	.action-panel {
+		padding: 1.5rem;
+	}
+}
