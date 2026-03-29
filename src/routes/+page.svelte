@@ -1,52 +1,19 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import ArchiveMetric from '$lib/components/ArchiveMetric.svelte';
-	import MetricCard from '$lib/components/MetricCard.svelte';
-	import PanelSection from '$lib/components/PanelSection.svelte';
+	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+	import ArchiveFeed from '$lib/components/ArchiveFeed.svelte';
+	import TrackerActions from '$lib/components/TrackerActions.svelte';
+	import TrackerHero from '$lib/components/TrackerHero.svelte';
+	import type {
+		ActiveSession,
+		ArchivedSession,
+		CorrectionTarget,
+		SessionEvent,
+		SessionEventType,
+		SessionMode,
+		ThemeMode
+	} from '$lib/types/work-tracker';
 	import { onDestroy, onMount } from 'svelte';
-
-	type SessionMode = 'idle' | 'work' | 'break';
-	type CorrectionTarget = 'work' | 'break';
-	type ThemeMode = 'light' | 'dark';
-	type SessionEventType =
-		| 'session_started'
-		| 'break_started'
-		| 'break_ended'
-		| 'work_added'
-		| 'break_added'
-		| 'work_removed'
-		| 'break_removed';
-
-	type SessionEvent = {
-		id: string;
-		type: SessionEventType;
-		label: string;
-		at: number;
-		amountMs?: number;
-		target?: CorrectionTarget;
-		direction?: 'add' | 'subtract';
-	};
-
-	type ActiveSession = {
-		mode: SessionMode;
-		createdAt: number | null;
-		currentModeStartedAt: number | null;
-		accumulatedWorkMs: number;
-		accumulatedBreakMs: number;
-		currentWorkBlockStartedAt: number | null;
-		lastWorkBlockMs: number;
-		events: SessionEvent[];
-		updatedAt: number;
-	};
-
-	type ArchivedSession = {
-		id: string;
-		startedAt: number;
-		endedAt: number;
-		workMs: number;
-		breakMs: number;
-		eventCount: number;
-	};
 
 	const ACTIVE_SESSION_STORAGE_KEY = 'super-stopwatch.active-session';
 	const HISTORY_STORAGE_KEY = 'super-stopwatch.history';
@@ -544,248 +511,43 @@
 		<div
 			class="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8"
 		>
-			<section
-				class="rounded-[1.75rem] border border-base-300 bg-base-100/75 p-6 shadow-[0_28px_70px_rgba(48,61,99,0.08)] backdrop-blur-[18px] sm:p-7"
+			<TrackerHero
+				{theme}
+				mode={session.mode}
+				{actionLabel}
+				masterDuration={formatDuration(totals.spanMs)}
+				workDuration={formatDuration(totals.workMs)}
+				breakDuration={formatDuration(totals.breakMs)}
+				currentWorkBlockDuration={formatDuration(getCurrentWorkBlockMs(session, now))}
+				{statusTone}
+				{statusLabel}
+				onThemeChange={saveTheme}
 			>
-				<div class="flex flex-col gap-8 lg:flex-row lg:items-stretch">
-					<div class="flex-1">
-						<div class="flex flex-wrap items-center justify-between gap-3">
-							<div class="flex flex-wrap items-center gap-3">
-								<span class={`badge badge-lg ${statusTone(session.mode)}`}
-									>{statusLabel(session.mode)}</span
-								>
-								<span
-									class="text-[0.72rem] font-bold tracking-[0.24em] text-base-content/60 uppercase"
-								>
-									Personal work hours
-								</span>
-							</div>
-							<div class="flex items-center gap-3">
-								<span class="text-sm font-semibold text-base-content">
-									{theme === 'dark' ? 'Dark' : 'Light'}
-								</span>
-								<input
-									type="checkbox"
-									class="toggle toggle-sm"
-									checked={theme === 'dark'}
-									aria-label="Toggle dark mode"
-									on:change={(event) =>
-										saveTheme((event.currentTarget as HTMLInputElement).checked ? 'dark' : 'light')}
-								/>
-							</div>
-						</div>
-
-						<div class="mt-5">
-							<p
-								class="text-[0.72rem] font-bold tracking-[0.24em] text-base-content/60 uppercase opacity-70"
-							>
-								Master Timer
-							</p>
-							<p class="mt-1 text-[clamp(1rem,2vw,1.35rem)] font-bold text-base-content">
-								Total session span
-							</p>
-							<h1
-								class="mt-2 text-[clamp(2.75rem,6vw,4.5rem)] font-bold tracking-[-0.06em] text-base-content"
-							>
-								{formatDuration(totals.spanMs).clock}
-								<span class="text-[0.42em] font-semibold text-base-content/55">
-									.{formatDuration(totals.spanMs).milliseconds}
-								</span>
-							</h1>
-							<p class="mt-3 max-w-[36rem] text-base text-base-content/60">{actionLabel}</p>
-						</div>
-
-						<div class="mt-6 grid gap-3 sm:grid-cols-3">
-							<MetricCard
-								label="Work Today"
-								clock={formatDuration(totals.workMs).clock}
-								milliseconds={formatDuration(totals.workMs).milliseconds}
-							/>
-							<MetricCard
-								label="Break Today"
-								clock={formatDuration(totals.breakMs).clock}
-								milliseconds={formatDuration(totals.breakMs).milliseconds}
-							/>
-							<MetricCard
-								label="Current Work Block"
-								clock={formatDuration(getCurrentWorkBlockMs(session, now)).clock}
-								milliseconds={formatDuration(getCurrentWorkBlockMs(session, now)).milliseconds}
-							/>
-						</div>
-					</div>
-
-					<div
-						class="w-full rounded-[1.75rem] border border-base-300 bg-base-100/85 p-5 sm:p-6 lg:w-[22rem]"
-					>
-						<p class="text-[0.72rem] font-bold tracking-[0.24em] text-base-content/60 uppercase">
-							Actions
-						</p>
-						<div class="mt-4 grid gap-3">
-							{#if session.mode === 'idle'}
-								<button class="btn w-full btn-lg btn-primary" on:click={startWork}
-									>Start work</button
-								>
-							{:else if session.mode === 'work'}
-								<button class="btn w-full btn-lg btn-warning" on:click={startBreak}
-									>Start break</button
-								>
-							{:else}
-								<button class="btn w-full btn-lg btn-success" on:click={endBreak}>End break</button>
-							{/if}
-
-							<button
-								class="btn w-full btn-outline btn-error"
-								on:click={stopDay}
-								disabled={totals.workMs === 0 &&
-									totals.breakMs === 0 &&
-									session.events.length === 0}
-							>
-								Stop day and archive
-							</button>
-						</div>
-
-						<div class="divider my-5">Corrections</div>
-
-						<div class="grid gap-4">
-							<div>
-								<p class="text-[0.92rem] font-semibold text-base-content">Add missed work time</p>
-								<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-									{#each correctionPresets as preset (preset.label)}
-										<button
-											class="btn min-w-0 justify-center font-semibold btn-sm btn-primary"
-											on:click={() => addCorrection('work', preset.amountMs)}
-										>
-											{preset.label}
-										</button>
-										<button
-											class="btn min-w-0 justify-center font-semibold btn-outline btn-sm btn-error"
-											on:click={() => addCorrection('work', -preset.amountMs)}
-										>
-											-{preset.label.slice(1)}
-										</button>
-									{/each}
-								</div>
-							</div>
-
-							<div>
-								<p class="text-[0.92rem] font-semibold text-base-content">Add missed break time</p>
-								<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2">
-									{#each correctionPresets as preset (preset.label)}
-										<button
-											class="btn min-w-0 justify-center font-semibold btn-sm btn-warning"
-											on:click={() => addCorrection('break', preset.amountMs)}
-										>
-											{preset.label}
-										</button>
-										<button
-											class="btn min-w-0 justify-center font-semibold btn-outline btn-sm btn-secondary"
-											on:click={() => addCorrection('break', -preset.amountMs)}
-										>
-											-{preset.label.slice(1)}
-										</button>
-									{/each}
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			</section>
+				<TrackerActions
+					mode={session.mode}
+					canArchive={!(totals.workMs === 0 && totals.breakMs === 0 && session.events.length === 0)}
+					{correctionPresets}
+					onStartWork={startWork}
+					onStartBreak={startBreak}
+					onEndBreak={endBreak}
+					onStopDay={stopDay}
+					onCorrection={addCorrection}
+				/>
+			</TrackerHero>
 
 			<div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-				<PanelSection
-					eyebrow="Current day timeline"
-					title="Recent activity"
+				<ActivityFeed
 					meta={session.createdAt
 						? `Started ${formatTime(session.createdAt)}`
 						: 'No active session yet'}
-				>
-					{#if session.events.length > 0}
-						<ul class="mt-6 max-h-[32.5rem] space-y-3 overflow-y-auto pr-1">
-							{#each session.events as event (event.id)}
-								<li class={eventTone(event)}>
-									<div
-										class="mt-[0.3rem] h-[0.8rem] w-[0.8rem] shrink-0 rounded-full bg-linear-to-br from-blue-500 to-sky-400 shadow-[0_0_0_6px_rgba(59,130,246,0.12)]"
-									></div>
-									<div class="min-w-0 flex-1">
-										<div class="flex flex-wrap items-center justify-between gap-2">
-											<p class="font-semibold text-base-content">{event.label}</p>
-											<div class="flex flex-wrap items-center gap-2">
-												{#if event.direction && event.target}
-													<span class={eventBadge(event)}>
-														{event.direction === 'add' ? 'Added' : 'Subtracted'}
-														{event.target}
-													</span>
-												{/if}
-												<span class="text-base-content/60">{formatTime(event.at)}</span>
-											</div>
-										</div>
-										{#if event.amountMs}
-											<p class="text-sm text-base-content/60">
-												Manual correction {event.direction === 'subtract'
-													? '-'
-													: '+'}{formatShortDuration(event.amountMs).slice(1)}
-											</p>
-										{/if}
-									</div>
-								</li>
-							{/each}
-						</ul>
-					{:else}
-						<div class="mt-6 rounded-3xl border border-base-300 bg-base-200/60 p-4">
-							<p class="font-semibold text-base-content">No activity yet</p>
-							<p class="mt-1 text-sm text-base-content/60">
-								Start work to create a session, then track breaks and missed time corrections.
-							</p>
-						</div>
-					{/if}
-				</PanelSection>
+					events={session.events}
+					{eventTone}
+					{eventBadge}
+					{formatTime}
+					{formatShortDuration}
+				/>
 
-				<PanelSection eyebrow="Archive" title="Recent days" badgeText={`${history.length} saved`}>
-					{#if history.length > 0}
-						<div class="mt-6 space-y-3">
-							{#each history as entry (entry.id)}
-								<div class="rounded-3xl border border-base-300 bg-base-200/60 p-4">
-									<div class="flex items-start justify-between gap-3">
-										<div>
-											<p class="font-semibold text-base-content">
-												{formatDate(entry.startedAt)}
-											</p>
-											<p class="text-base-content/60">
-												{formatTime(entry.startedAt)} to {formatTime(entry.endedAt)}
-											</p>
-										</div>
-										<span class="badge badge-ghost">{entry.eventCount} updates</span>
-									</div>
-
-									<div class="mt-4 grid grid-cols-3 gap-2 text-sm">
-										<ArchiveMetric
-											label="Work"
-											clock={formatDuration(entry.workMs).clock}
-											milliseconds={formatDuration(entry.workMs).milliseconds}
-										/>
-										<ArchiveMetric
-											label="Break"
-											clock={formatDuration(entry.breakMs).clock}
-											milliseconds={formatDuration(entry.breakMs).milliseconds}
-										/>
-										<ArchiveMetric
-											label="Span"
-											clock={formatDuration(entry.workMs + entry.breakMs).clock}
-											milliseconds={formatDuration(entry.workMs + entry.breakMs).milliseconds}
-										/>
-									</div>
-								</div>
-							{/each}
-						</div>
-					{:else}
-						<div class="mt-6 rounded-3xl border border-base-300 bg-base-200/60 p-4">
-							<p class="font-semibold text-base-content">No archived days yet</p>
-							<p class="mt-1 text-sm text-base-content/60">
-								Use “Stop day and archive” to save the finished session locally.
-							</p>
-						</div>
-					{/if}
-				</PanelSection>
+				<ArchiveFeed {history} {formatTime} {formatDate} {formatDuration} />
 			</div>
 		</div>
 	</div>
