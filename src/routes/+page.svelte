@@ -3,13 +3,15 @@
 
 	type SessionMode = 'idle' | 'work' | 'break';
 	type CorrectionTarget = 'work' | 'break';
+	type ThemeMode = 'light' | 'dark';
 	type SessionEventType =
 		| 'session_started'
 		| 'break_started'
 		| 'break_ended'
 		| 'work_added'
 		| 'break_added'
-		| 'session_stopped';
+		| 'work_removed'
+		| 'break_removed';
 
 	type SessionEvent = {
 		id: string;
@@ -17,9 +19,11 @@
 		label: string;
 		at: number;
 		amountMs?: number;
+		target?: CorrectionTarget;
+		direction?: 'add' | 'subtract';
 	};
 
-	type SessionState = {
+	type ActiveSession = {
 		mode: SessionMode;
 		createdAt: number | null;
 		currentModeStartedAt: number | null;
@@ -35,11 +39,12 @@
 		endedAt: number;
 		workMs: number;
 		breakMs: number;
-		events: SessionEvent[];
+		eventCount: number;
 	};
 
-	const SESSION_STORAGE_KEY = 'super-stopwatch.active-session';
+	const ACTIVE_SESSION_STORAGE_KEY = 'super-stopwatch.active-session';
 	const HISTORY_STORAGE_KEY = 'super-stopwatch.history';
+	const THEME_STORAGE_KEY = 'super-stopwatch.theme';
 
 	const correctionPresets = [
 		{ label: '+5m', amountMs: 5 * 60 * 1000 },
@@ -50,11 +55,14 @@
 
 	let session = createEmptySession();
 	let history: ArchivedSession[] = [];
+	let totals = getLiveTotals(session, Date.now());
+	let actionLabel = 'Start tracking your day';
 	let now = Date.now();
 	let isHydrated = false;
 	let intervalId: number | undefined;
+	let theme: ThemeMode = 'dark';
 
-	function createEmptySession(): SessionState {
+	function createEmptySession(): ActiveSession {
 		return {
 			mode: 'idle',
 			createdAt: null,
@@ -74,22 +82,30 @@
 		type: SessionEventType,
 		label: string,
 		at: number,
-		amountMs?: number
+		amountMs?: number,
+		target?: CorrectionTarget,
+		direction?: 'add' | 'subtract'
 	): SessionEvent {
 		return {
 			id: createId('evt'),
 			type,
 			label,
 			at,
-			amountMs
+			amountMs,
+			target,
+			direction
 		};
 	}
 
-	function restoreSession(raw: string | null): SessionState {
+	function restoreTheme(raw: string | null): ThemeMode {
+		return raw === 'light' || raw === 'dark' ? raw : 'dark';
+	}
+
+	function restoreActiveSession(raw: string | null): ActiveSession {
 		if (!raw) return createEmptySession();
 
 		try {
-			const parsed = JSON.parse(raw) as Partial<SessionState>;
+			const parsed = JSON.parse(raw) as Partial<ActiveSession>;
 
 			return {
 				mode:
@@ -105,7 +121,9 @@
 					typeof parsed.accumulatedBreakMs === 'number'
 						? Math.max(0, parsed.accumulatedBreakMs)
 						: 0,
-				events: Array.isArray(parsed.events) ? parsed.events.slice(0, 50) : [],
+				events: Array.isArray(parsed.events)
+					? parsed.events.filter(isSessionEvent).slice(0, 50)
+					: [],
 				updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now()
 			};
 		} catch {
@@ -120,33 +138,39 @@
 			const parsed = JSON.parse(raw);
 			if (!Array.isArray(parsed)) return [];
 
-			return parsed.filter((entry): entry is ArchivedSession => {
-				return (
-					entry &&
-					typeof entry.id === 'string' &&
-					typeof entry.startedAt === 'number' &&
-					typeof entry.endedAt === 'number' &&
-					typeof entry.workMs === 'number' &&
-					typeof entry.breakMs === 'number' &&
-					Array.isArray(entry.events)
-				);
-			});
+			return parsed.filter(isArchivedSession).slice(0, 30);
 		} catch {
 			return [];
 		}
 	}
 
-	function persistSession() {
-		if (!isHydrated || typeof window === 'undefined') return;
-		window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+	function isSessionEvent(value: unknown): value is SessionEvent {
+		if (!value || typeof value !== 'object') return false;
+
+		const event = value as Partial<SessionEvent>;
+		return (
+			typeof event.id === 'string' &&
+			typeof event.type === 'string' &&
+			typeof event.label === 'string' &&
+			typeof event.at === 'number'
+		);
 	}
 
-	function persistHistory() {
-		if (!isHydrated || typeof window === 'undefined') return;
-		window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+	function isArchivedSession(value: unknown): value is ArchivedSession {
+		if (!value || typeof value !== 'object') return false;
+
+		const entry = value as Partial<ArchivedSession>;
+		return (
+			typeof entry.id === 'string' &&
+			typeof entry.startedAt === 'number' &&
+			typeof entry.endedAt === 'number' &&
+			typeof entry.workMs === 'number' &&
+			typeof entry.breakMs === 'number' &&
+			typeof entry.eventCount === 'number'
+		);
 	}
 
-	function liveTotals(state: SessionState, timestamp: number) {
+	function getLiveTotals(state: ActiveSession, timestamp: number) {
 		let workMs = state.accumulatedWorkMs;
 		let breakMs = state.accumulatedBreakMs;
 
@@ -165,10 +189,35 @@
 		};
 	}
 
-	function appendEvent(event: SessionEvent) {
-		session = {
-			...session,
-			events: [event, ...session.events].slice(0, 50),
+	function saveActiveSession(nextSession: ActiveSession) {
+		session = nextSession;
+		totals = getLiveTotals(session, Date.now());
+		actionLabel = getActionLabel(session);
+
+		if (!isHydrated || typeof window === 'undefined') return;
+		window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, JSON.stringify(nextSession));
+	}
+
+	function saveHistory(nextHistory: ArchivedSession[]) {
+		history = nextHistory;
+		if (!isHydrated || typeof window === 'undefined') return;
+		window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(nextHistory));
+	}
+
+	function saveTheme(nextTheme: ThemeMode) {
+		theme = nextTheme;
+		if (typeof document !== 'undefined') {
+			document.documentElement.setAttribute('data-theme', nextTheme);
+		}
+
+		if (!isHydrated || typeof window === 'undefined') return;
+		window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+	}
+
+	function addEvent(nextSession: ActiveSession, event: SessionEvent) {
+		return {
+			...nextSession,
+			events: [event, ...nextSession.events].slice(0, 50),
 			updatedAt: event.at
 		};
 	}
@@ -177,20 +226,22 @@
 		if (session.mode === 'work') return;
 
 		const timestamp = Date.now();
-		const nextCreatedAt = session.createdAt ?? timestamp;
-		session = {
-			...session,
-			mode: 'work',
-			createdAt: nextCreatedAt,
-			currentModeStartedAt: timestamp,
-			updatedAt: timestamp
-		};
-
-		appendEvent(
-			session.events.length === 0
-				? createEvent('session_started', 'Started work session', timestamp)
-				: createEvent('break_ended', 'Returned to work', timestamp)
+		const nextSession = addEvent(
+			{
+				...session,
+				mode: 'work',
+				createdAt: session.createdAt ?? timestamp,
+				currentModeStartedAt: timestamp,
+				updatedAt: timestamp
+			},
+			createEvent(
+				session.events.length === 0 ? 'session_started' : 'break_ended',
+				session.events.length === 0 ? 'Started work session' : 'Returned to work',
+				timestamp
+			)
 		);
+
+		saveActiveSession(nextSession);
 	}
 
 	function startBreak() {
@@ -198,16 +249,18 @@
 
 		const timestamp = Date.now();
 		const elapsedWork = Math.max(0, timestamp - session.currentModeStartedAt);
+		const nextSession = addEvent(
+			{
+				...session,
+				mode: 'break',
+				accumulatedWorkMs: session.accumulatedWorkMs + elapsedWork,
+				currentModeStartedAt: timestamp,
+				updatedAt: timestamp
+			},
+			createEvent('break_started', 'Started break', timestamp)
+		);
 
-		session = {
-			...session,
-			mode: 'break',
-			accumulatedWorkMs: session.accumulatedWorkMs + elapsedWork,
-			currentModeStartedAt: timestamp,
-			updatedAt: timestamp
-		};
-
-		appendEvent(createEvent('break_started', 'Started break', timestamp));
+		saveActiveSession(nextSession);
 	}
 
 	function endBreak() {
@@ -215,68 +268,97 @@
 
 		const timestamp = Date.now();
 		const elapsedBreak = Math.max(0, timestamp - session.currentModeStartedAt);
+		const nextSession = addEvent(
+			{
+				...session,
+				mode: 'work',
+				accumulatedBreakMs: session.accumulatedBreakMs + elapsedBreak,
+				currentModeStartedAt: timestamp,
+				updatedAt: timestamp
+			},
+			createEvent('break_ended', 'Ended break', timestamp)
+		);
 
-		session = {
-			...session,
-			mode: 'work',
-			accumulatedBreakMs: session.accumulatedBreakMs + elapsedBreak,
-			currentModeStartedAt: timestamp,
-			updatedAt: timestamp
-		};
-
-		appendEvent(createEvent('break_ended', 'Ended break', timestamp));
+		saveActiveSession(nextSession);
 	}
 
 	function addCorrection(target: CorrectionTarget, amountMs: number) {
-		if (amountMs <= 0) return;
+		if (amountMs === 0) return;
 
 		const timestamp = Date.now();
-		session = {
-			...session,
-			accumulatedWorkMs:
-				target === 'work' ? session.accumulatedWorkMs + amountMs : session.accumulatedWorkMs,
-			accumulatedBreakMs:
-				target === 'break' ? session.accumulatedBreakMs + amountMs : session.accumulatedBreakMs,
-			createdAt: session.createdAt ?? timestamp,
-			updatedAt: timestamp
-		};
-
-		appendEvent(
+		const direction = amountMs > 0 ? 'add' : 'subtract';
+		const absoluteAmount = Math.abs(amountMs);
+		const nextSession = addEvent(
+			{
+				...session,
+				createdAt: session.createdAt ?? timestamp,
+				accumulatedWorkMs:
+					target === 'work'
+						? Math.max(0, session.accumulatedWorkMs + amountMs)
+						: session.accumulatedWorkMs,
+				accumulatedBreakMs:
+					target === 'break'
+						? Math.max(0, session.accumulatedBreakMs + amountMs)
+						: session.accumulatedBreakMs,
+				updatedAt: timestamp
+			},
 			createEvent(
-				target === 'work' ? 'work_added' : 'break_added',
-				`${target === 'work' ? 'Added missed work' : 'Added missed break'} ${formatShortDuration(amountMs)}`,
+				target === 'work'
+					? direction === 'add'
+						? 'work_added'
+						: 'work_removed'
+					: direction === 'add'
+						? 'break_added'
+						: 'break_removed',
+				`${direction === 'add' ? 'Added' : 'Subtracted'} ${target === 'work' ? 'work' : 'break'} ${formatSignedDuration(amountMs)}`,
 				timestamp,
-				amountMs
+				absoluteAmount,
+				target,
+				direction
 			)
 		);
+
+		saveActiveSession(nextSession);
 	}
 
 	function stopDay() {
 		if (
 			session.mode === 'idle' &&
 			session.accumulatedWorkMs === 0 &&
-			session.accumulatedBreakMs === 0
+			session.accumulatedBreakMs === 0 &&
+			session.events.length === 0
 		)
 			return;
 
 		const timestamp = Date.now();
-		const totals = liveTotals(session, timestamp);
-		const stoppedEvent = createEvent(
-			'session_stopped',
-			'Stopped day and archived session',
-			timestamp
-		);
-		const archived: ArchivedSession = {
+		const finalTotals = getLiveTotals(session, timestamp);
+		const archivedEntry: ArchivedSession = {
 			id: createId('session'),
 			startedAt: session.createdAt ?? timestamp,
 			endedAt: timestamp,
-			workMs: totals.workMs,
-			breakMs: totals.breakMs,
-			events: [stoppedEvent, ...session.events]
+			workMs: finalTotals.workMs,
+			breakMs: finalTotals.breakMs,
+			eventCount: session.events.length + 1
 		};
 
-		history = [archived, ...history].slice(0, 14);
-		session = createEmptySession();
+		saveHistory([archivedEntry, ...history].slice(0, 30));
+		saveActiveSession(createEmptySession());
+	}
+
+	function getActionLabel(state: ActiveSession) {
+		if (state.mode === 'work') {
+			return `Working since ${formatTime(state.currentModeStartedAt)}`;
+		}
+
+		if (state.mode === 'break') {
+			return `On break since ${formatTime(state.currentModeStartedAt)}`;
+		}
+
+		if (state.createdAt) {
+			return `Session saved from ${formatTime(state.createdAt)}. Resume when ready.`;
+		}
+
+		return 'Start tracking your day';
 	}
 
 	function formatDuration(ms: number) {
@@ -297,6 +379,16 @@
 		}
 
 		return `+${totalMinutes}m`;
+	}
+
+	function formatSignedDuration(ms: number) {
+		const totalMinutes = Math.floor(Math.abs(ms) / 60_000);
+		const prefix = ms >= 0 ? '+' : '-';
+		if (totalMinutes >= 60 && totalMinutes % 60 === 0) {
+			return `${prefix}${totalMinutes / 60}h`;
+		}
+
+		return `${prefix}${totalMinutes}m`;
 	}
 
 	function formatTime(timestamp: number | null) {
@@ -328,24 +420,55 @@
 		return 'badge-neutral';
 	}
 
-	function handleStorage(event: StorageEvent) {
-		if (event.key === SESSION_STORAGE_KEY) {
-			session = restoreSession(event.newValue);
-		}
+	function eventTone(event: SessionEvent) {
+		if (event.type === 'work_added') return 'timeline-row timeline-work-add';
+		if (event.type === 'work_removed') return 'timeline-row timeline-work-remove';
+		if (event.type === 'break_added') return 'timeline-row timeline-break-add';
+		if (event.type === 'break_removed') return 'timeline-row timeline-break-remove';
+		if (event.type === 'break_started') return 'timeline-row timeline-break-state';
+		if (event.type === 'break_ended') return 'timeline-row timeline-work-state';
+		return 'timeline-row timeline-default';
+	}
 
-		if (event.key === HISTORY_STORAGE_KEY) {
-			history = restoreHistory(event.newValue);
+	function eventBadge(event: SessionEvent) {
+		if (event.type === 'work_added') return 'badge badge-success badge-outline';
+		if (event.type === 'work_removed') return 'badge badge-error badge-outline';
+		if (event.type === 'break_added') return 'badge badge-warning badge-outline';
+		if (event.type === 'break_removed') return 'badge badge-secondary badge-outline';
+		if (event.type === 'break_started') return 'badge badge-warning badge-outline';
+		if (event.type === 'break_ended') return 'badge badge-success badge-outline';
+		return 'badge badge-outline';
+	}
+
+	function syncFromStorage() {
+		if (typeof window === 'undefined') return;
+
+		session = restoreActiveSession(window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY));
+		history = restoreHistory(window.localStorage.getItem(HISTORY_STORAGE_KEY));
+		theme = restoreTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+		document.documentElement.setAttribute('data-theme', theme);
+		now = Date.now();
+		totals = getLiveTotals(session, now);
+		actionLabel = getActionLabel(session);
+	}
+
+	function handleStorage(event: StorageEvent) {
+		if (
+			event.key === ACTIVE_SESSION_STORAGE_KEY ||
+			event.key === HISTORY_STORAGE_KEY ||
+			event.key === THEME_STORAGE_KEY
+		) {
+			syncFromStorage();
 		}
 	}
 
 	onMount(() => {
-		session = restoreSession(window.localStorage.getItem(SESSION_STORAGE_KEY));
-		history = restoreHistory(window.localStorage.getItem(HISTORY_STORAGE_KEY));
 		isHydrated = true;
-		now = Date.now();
+		syncFromStorage();
 
 		intervalId = window.setInterval(() => {
 			now = Date.now();
+			totals = getLiveTotals(session, now);
 		}, 250);
 
 		window.addEventListener('storage', handleStorage);
@@ -359,18 +482,6 @@
 	onDestroy(() => {
 		if (intervalId) clearInterval(intervalId);
 	});
-
-	$: if (isHydrated) persistSession();
-	$: if (isHydrated) persistHistory();
-	$: totals = liveTotals(session, now);
-	$: actionLabel =
-		session.mode === 'work'
-			? `Working since ${formatTime(session.currentModeStartedAt)}`
-			: session.mode === 'break'
-				? `On break since ${formatTime(session.currentModeStartedAt)}`
-				: session.createdAt
-					? `Ready to resume from ${formatTime(session.createdAt)}`
-					: 'Start tracking your day';
 </script>
 
 <svelte:head>
@@ -381,26 +492,34 @@
 	/>
 </svelte:head>
 
-<div class="page-shell">
+<div class="page-shell" data-theme={theme}>
 	<div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
 		<section class="hero-card">
 			<div class="flex flex-col gap-8 lg:flex-row lg:items-stretch">
 				<div class="flex-1">
-					<div class="flex flex-wrap items-center gap-3">
-						<span class={`badge badge-lg ${statusTone(session.mode)}`}
-							>{statusLabel(session.mode)}</span
-						>
-						<span class="text-sm font-medium tracking-[0.24em] text-base-content/55 uppercase">
-							Personal work hours
-						</span>
+					<div class="flex flex-wrap items-center justify-between gap-3">
+						<div class="flex flex-wrap items-center gap-3">
+							<span class={`badge badge-lg ${statusTone(session.mode)}`}
+								>{statusLabel(session.mode)}</span
+							>
+							<span class="eyebrow">Personal work hours</span>
+						</div>
+						<label class="theme-toggle">
+							<span class="theme-toggle-label">{theme === 'dark' ? 'Dark' : 'Light'}</span>
+							<input
+								type="checkbox"
+								class="toggle toggle-sm"
+								checked={theme === 'dark'}
+								on:change={(event) =>
+									saveTheme((event.currentTarget as HTMLInputElement).checked ? 'dark' : 'light')}
+							/>
+						</label>
 					</div>
 
 					<div class="mt-5">
-						<p class="text-sm tracking-[0.3em] text-base-content/45 uppercase">Today</p>
-						<h1 class="mt-2 text-4xl font-semibold tracking-tight text-base-content sm:text-5xl">
-							{formatDuration(totals.workMs)}
-						</h1>
-						<p class="mt-3 max-w-xl text-base text-base-content/65 sm:text-lg">{actionLabel}</p>
+						<p class="eyebrow opacity-70">Today</p>
+						<h1 class="hero-time">{formatDuration(totals.workMs)}</h1>
+						<p class="hero-copy">{actionLabel}</p>
 					</div>
 
 					<div class="mt-6 grid gap-3 sm:grid-cols-3">
@@ -435,7 +554,7 @@
 						<button
 							class="btn w-full btn-outline btn-error"
 							on:click={stopDay}
-							disabled={totals.workMs === 0 && totals.breakMs === 0}
+							disabled={totals.workMs === 0 && totals.breakMs === 0 && session.events.length === 0}
 						>
 							Stop day and archive
 						</button>
@@ -454,6 +573,12 @@
 									>
 										{preset.label}
 									</button>
+									<button
+										class="btn btn-outline btn-sm btn-error"
+										on:click={() => addCorrection('work', -preset.amountMs)}
+									>
+										-{preset.label.slice(1)}
+									</button>
 								{/each}
 							</div>
 						</div>
@@ -468,6 +593,12 @@
 									>
 										{preset.label}
 									</button>
+									<button
+										class="btn btn-outline btn-sm btn-secondary"
+										on:click={() => addCorrection('break', -preset.amountMs)}
+									>
+										-{preset.label.slice(1)}
+									</button>
 								{/each}
 							</div>
 						</div>
@@ -477,13 +608,13 @@
 		</section>
 
 		<div class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-			<section class="panel-card">
+			<section class="panel-card text-slate-900">
 				<div class="flex items-center justify-between gap-4">
 					<div>
 						<p class="panel-label">Current day timeline</p>
-						<h2 class="mt-1 text-2xl font-semibold">Recent activity</h2>
+						<h2 class="panel-title">Recent activity</h2>
 					</div>
-					<p class="text-sm text-base-content/55">
+					<p class="panel-meta">
 						{session.createdAt
 							? `Started ${formatTime(session.createdAt)}`
 							: 'No active session yet'}
@@ -493,16 +624,26 @@
 				{#if session.events.length > 0}
 					<ul class="mt-6 space-y-3">
 						{#each session.events as event (event.id)}
-							<li class="timeline-row">
+							<li class={eventTone(event)}>
 								<div class="timeline-dot"></div>
-								<div class="flex-1">
+								<div class="min-w-0 flex-1">
 									<div class="flex flex-wrap items-center justify-between gap-2">
-										<p class="font-medium text-base-content">{event.label}</p>
-										<span class="text-sm text-base-content/50">{formatTime(event.at)}</span>
+										<p class="timeline-title">{event.label}</p>
+										<div class="flex flex-wrap items-center gap-2">
+											{#if event.direction && event.target}
+												<span class={eventBadge(event)}>
+													{event.direction === 'add' ? 'Added' : 'Subtracted'}
+													{event.target}
+												</span>
+											{/if}
+											<span class="timeline-time">{formatTime(event.at)}</span>
+										</div>
 									</div>
 									{#if event.amountMs}
-										<p class="mt-1 text-sm text-base-content/55">
-											Manual correction {formatShortDuration(event.amountMs)}
+										<p class="timeline-note">
+											Manual correction {event.direction === 'subtract'
+												? '-'
+												: '+'}{formatShortDuration(event.amountMs).slice(1)}
 										</p>
 									{/if}
 								</div>
@@ -511,19 +652,19 @@
 					</ul>
 				{:else}
 					<div class="empty-state mt-6">
-						<p class="text-lg font-medium">No activity yet</p>
-						<p class="mt-1 text-sm text-base-content/60">
+						<p class="empty-title">No activity yet</p>
+						<p class="empty-copy">
 							Start work to create a session, then track breaks and missed time corrections.
 						</p>
 					</div>
 				{/if}
 			</section>
 
-			<section class="panel-card">
+			<section class="panel-card text-slate-900">
 				<div class="flex items-center justify-between gap-4">
 					<div>
 						<p class="panel-label">Archive</p>
-						<h2 class="mt-1 text-2xl font-semibold">Recent days</h2>
+						<h2 class="panel-title">Recent days</h2>
 					</div>
 					<span class="badge badge-outline">{history.length} saved</span>
 				</div>
@@ -534,26 +675,26 @@
 							<div class="archive-card">
 								<div class="flex items-start justify-between gap-3">
 									<div>
-										<p class="font-semibold text-base-content">{formatDate(entry.startedAt)}</p>
-										<p class="text-sm text-base-content/55">
+										<p class="archive-title">{formatDate(entry.startedAt)}</p>
+										<p class="archive-meta">
 											{formatTime(entry.startedAt)} to {formatTime(entry.endedAt)}
 										</p>
 									</div>
-									<span class="badge badge-ghost">{entry.events.length} events</span>
+									<span class="badge badge-ghost">{entry.eventCount} updates</span>
 								</div>
 
 								<div class="mt-4 grid grid-cols-3 gap-2 text-sm">
-									<div class="rounded-2xl bg-base-100/80 px-3 py-2">
-										<p class="text-base-content/50">Work</p>
-										<p class="mt-1 font-semibold">{formatDuration(entry.workMs)}</p>
+									<div class="archive-metric">
+										<p class="archive-label">Work</p>
+										<p class="archive-value">{formatDuration(entry.workMs)}</p>
 									</div>
-									<div class="rounded-2xl bg-base-100/80 px-3 py-2">
-										<p class="text-base-content/50">Break</p>
-										<p class="mt-1 font-semibold">{formatDuration(entry.breakMs)}</p>
+									<div class="archive-metric">
+										<p class="archive-label">Break</p>
+										<p class="archive-value">{formatDuration(entry.breakMs)}</p>
 									</div>
-									<div class="rounded-2xl bg-base-100/80 px-3 py-2">
-										<p class="text-base-content/50">Span</p>
-										<p class="mt-1 font-semibold">{formatDuration(entry.workMs + entry.breakMs)}</p>
+									<div class="archive-metric">
+										<p class="archive-label">Span</p>
+										<p class="archive-value">{formatDuration(entry.workMs + entry.breakMs)}</p>
 									</div>
 								</div>
 							</div>
@@ -561,8 +702,8 @@
 					</div>
 				{:else}
 					<div class="empty-state mt-6">
-						<p class="text-lg font-medium">No archived days yet</p>
-						<p class="mt-1 text-sm text-base-content/60">
+						<p class="empty-title">No archived days yet</p>
+						<p class="empty-copy">
 							Use “Stop day and archive” to save the finished session locally.
 						</p>
 					</div>
