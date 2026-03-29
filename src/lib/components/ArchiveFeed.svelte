@@ -7,17 +7,25 @@
 		history,
 		formatTime,
 		formatDate,
-		formatDuration
+		formatDuration,
+		onDeleteEntry,
+		onClearAll
 	}: {
 		history: ArchivedSession[];
 		formatTime: (timestamp: number | null) => string;
 		formatDate: (timestamp: number) => string;
 		formatDuration: (ms: number) => DurationParts;
+		onDeleteEntry: (id: string) => void;
+		onClearAll: () => void;
 	} = $props();
 </script>
 
 <PanelSection eyebrow="Archive" title="Recent days" badgeText={`${history.length} saved`}>
 	{#if history.length > 0}
+		<div class="mt-4 flex justify-end">
+			<button class="btn btn-outline btn-sm btn-error" onclick={onClearAll}>Clear archive</button>
+		</div>
+
 		<div class="mt-6 space-y-3">
 			{#each history as entry (entry.id)}
 				<div class="rounded-3xl border border-base-300 bg-base-200/60 p-4">
@@ -28,7 +36,16 @@
 								{formatTime(entry.startedAt)} to {formatTime(entry.endedAt)}
 							</p>
 						</div>
-						<span class="badge badge-ghost">{entry.eventCount} updates</span>
+						<div class="flex items-center gap-2">
+							<span class="badge badge-ghost">{entry.eventCount} updates</span>
+							<button
+								class="btn text-error btn-ghost btn-xs"
+								aria-label="Delete archived entry"
+								onclick={() => onDeleteEntry(entry.id)}
+							>
+								Delete
+							</button>
+						</div>
 					</div>
 
 					<div class="mt-4 grid grid-cols-3 gap-2 text-sm">

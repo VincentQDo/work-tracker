@@ -345,6 +345,15 @@
 		saveActiveSession(createEmptySession());
 	}
 
+	function deleteArchivedEntry(id: string) {
+		saveHistory(history.filter((entry) => entry.id !== id));
+	}
+
+	function clearArchive() {
+		if (typeof window !== 'undefined' && !window.confirm('Clear all archived sessions?')) return;
+		saveHistory([]);
+	}
+
 	function getActionLabel(state: ActiveSession) {
 		if (state.mode === 'work') {
 			return `Working since ${formatTime(state.currentModeStartedAt)}`;
@@ -547,7 +556,14 @@
 					{formatShortDuration}
 				/>
 
-				<ArchiveFeed {history} {formatTime} {formatDate} {formatDuration} />
+				<ArchiveFeed
+					{history}
+					{formatTime}
+					{formatDate}
+					{formatDuration}
+					onDeleteEntry={deleteArchivedEntry}
+					onClearAll={clearArchive}
+				/>
 			</div>
 		</div>
 	</div>
